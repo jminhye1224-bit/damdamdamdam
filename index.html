@@ -1,0 +1,1432 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>우리의 천로역정</title>
+
+<!--
+============================================================
+  우리의 천로역정 — 예담 & 민혜 2인 협동 순례 게임
+============================================================
+  ※ Firebase 설정값을 입력해야 온라인 2인 접속 기능이 작동합니다.
+  아래 firebaseConfig 영역에 본인 Firebase 프로젝트의 값을 넣어주세요.
+  (Firebase 콘솔 → 프로젝트 설정 → 내 앱(웹) → SDK 설정 및 구성)
+  Realtime Database 를 반드시 활성화하고, 처음에는 테스트 규칙
+  (읽기/쓰기 true)으로 시작하세요.
+  ※ 설정값이 비어 있으면 혼자 둘러보는 "솔로 연습 모드"로 동작합니다.
+============================================================
+-->
+
+<!-- three.js CDN -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<!-- Firebase CDN (compat) -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+<style>
+  :root{
+    --purple:#6b4fb5; --purple-deep:#3a2a6b; --gold:#f2c66d;
+    --gold-bright:#ffd98a; --white:#fdfaff;
+  }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html,body{ width:100%; height:100%; overflow:hidden; font-family:"Segoe UI","맑은 고딕",sans-serif; }
+  body{ background:radial-gradient(circle at 50% 20%,#5a4699,#2a1f52 70%); color:var(--white); }
+  #game-canvas{ position:fixed; inset:0; z-index:0; display:block; }
+
+  .screen{
+    position:fixed; inset:0; z-index:10;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    text-align:center; padding:24px;
+    background:radial-gradient(circle at 50% 25%,rgba(90,70,153,.95),rgba(34,25,70,.97));
+  }
+  .screen.hidden{ display:none; }
+  h1{ font-size:44px; color:var(--gold-bright); text-shadow:0 2px 18px rgba(242,198,109,.55); letter-spacing:2px; }
+  h2{ font-size:26px; color:var(--gold-bright); margin-bottom:8px; }
+  .subtitle{ color:#d9cdfa; margin:10px 0 28px; font-size:16px; line-height:1.6; }
+  .card{
+    background:rgba(255,255,255,.07); border:1px solid rgba(242,198,109,.35);
+    border-radius:18px; padding:28px 32px; max-width:480px; width:100%;
+    box-shadow:0 12px 40px rgba(0,0,0,.4); backdrop-filter:blur(4px);
+  }
+  button{
+    font-family:inherit; cursor:pointer; border:none; border-radius:12px;
+    padding:13px 22px; font-size:16px; font-weight:700; margin:7px 4px; color:var(--purple-deep);
+    background:linear-gradient(180deg,var(--gold-bright),var(--gold));
+    box-shadow:0 5px 16px rgba(242,198,109,.4); transition:transform .12s,box-shadow .12s;
+  }
+  button:hover{ transform:translateY(-2px); box-shadow:0 8px 22px rgba(242,198,109,.55); }
+  button:active{ transform:translateY(0); }
+  button.ghost{ background:transparent; color:var(--gold-bright); border:1px solid rgba(242,198,109,.5); box-shadow:none; }
+  button:disabled{ opacity:.45; cursor:not-allowed; transform:none; box-shadow:none; }
+  input{
+    font-family:inherit; font-size:22px; letter-spacing:8px; text-align:center;
+    padding:12px; border-radius:10px; border:1px solid rgba(242,198,109,.5);
+    background:rgba(0,0,0,.25); color:var(--white); width:100%; margin:10px 0;
+  }
+  .code-display{
+    font-size:40px; letter-spacing:12px; color:var(--gold-bright); font-weight:800;
+    background:rgba(0,0,0,.3); border-radius:12px; padding:14px 10px; margin:14px 0;
+    border:1px dashed rgba(242,198,109,.6); cursor:copy;
+  }
+  .char-row{ display:flex; gap:16px; justify-content:center; margin:18px 0; flex-wrap:wrap; }
+  .char-pick{
+    width:150px; border-radius:16px; padding:18px 12px; cursor:pointer;
+    border:2px solid rgba(255,255,255,.18); background:rgba(255,255,255,.05); transition:all .15s;
+  }
+  .char-pick:hover{ border-color:var(--gold); transform:translateY(-3px); }
+  .char-pick.selected{ border-color:var(--gold-bright); background:rgba(242,198,109,.18); }
+  .char-pick.taken{ opacity:.4; cursor:not-allowed; }
+  .char-ava{ width:70px; height:70px; border-radius:50%; margin:0 auto 10px; }
+  .yedam-ava{ background:radial-gradient(circle at 40% 35%,#8fd0ff,#3f6fc4); }
+  .minhye-ava{ background:radial-gradient(circle at 40% 35%,#ffc4e6,#c45f9b); }
+  .small{ font-size:13px; color:#ccbff5; }
+  .err{ color:#ff9c9c; min-height:20px; font-size:14px; margin-top:6px; }
+  .waiting{ color:var(--gold-bright); font-size:15px; margin-top:10px; min-height:20px; }
+
+  #hud{
+    position:fixed; top:0; left:0; right:0; z-index:5; padding:12px 18px;
+    display:flex; justify-content:space-between; align-items:flex-start; pointer-events:none;
+  }
+  .hud-box{
+    background:rgba(34,25,70,.62); border:1px solid rgba(242,198,109,.35);
+    border-radius:12px; padding:8px 14px; font-size:14px; min-width:150px;
+  }
+  .hud-name{ color:var(--gold-bright); font-weight:700; }
+  .bar{ height:9px; border-radius:5px; background:rgba(255,255,255,.15); margin-top:5px; overflow:hidden; }
+  .bar > span{ display:block; height:100%; background:linear-gradient(90deg,#ff8aa0,#ffd98a); transition:width .2s; }
+  #stage-banner{
+    position:fixed; top:64px; left:50%; transform:translateX(-50%); z-index:5;
+    background:rgba(34,25,70,.7); border:1px solid rgba(242,198,109,.45);
+    border-radius:30px; padding:8px 26px; font-size:16px; color:var(--gold-bright); font-weight:700;
+    pointer-events:none; white-space:nowrap;
+  }
+  #objective{
+    position:fixed; bottom:70px; left:50%; transform:translateX(-50%); z-index:5;
+    background:rgba(34,25,70,.62); border:1px solid rgba(242,198,109,.3);
+    border-radius:12px; padding:8px 18px; font-size:14px; color:var(--white);
+    pointer-events:none; max-width:80%; text-align:center;
+  }
+  #controls-hint{
+    position:fixed; bottom:14px; left:50%; transform:translateX(-50%); z-index:5;
+    font-size:12px; color:#c9bcf0; pointer-events:none; opacity:.85;
+  }
+  .hidden{ display:none !important; }
+
+  #toast-wrap{ position:fixed; bottom:110px; left:50%; transform:translateX(-50%); z-index:6; pointer-events:none; }
+  .toast{
+    background:rgba(242,198,109,.92); color:#3a2a6b; font-weight:700;
+    padding:8px 18px; border-radius:20px; margin-top:8px; font-size:14px;
+    animation:toastIn .3s ease; box-shadow:0 6px 18px rgba(0,0,0,.35);
+  }
+  @keyframes toastIn{ from{ opacity:0; transform:translateY(12px);} to{ opacity:1; } }
+
+  .overlay-panel{
+    position:fixed; inset:0; z-index:8; display:flex; align-items:center; justify-content:center;
+    background:rgba(20,14,44,.55); backdrop-filter:blur(2px);
+  }
+  .overlay-panel.hidden{ display:none; }
+  .q-card{ max-width:520px; width:90%; }
+  .q-text{ font-size:20px; margin:6px 0 18px; color:var(--white); line-height:1.5; }
+  .q-opts button{ display:block; width:100%; margin:8px 0; text-align:left; }
+  .q-status{ margin-top:12px; font-size:14px; color:var(--gold-bright); min-height:20px; }
+
+  #endScreen .ending-msg{ font-size:30px; color:var(--gold-bright); line-height:1.5; margin:12px 0; text-shadow:0 2px 16px rgba(242,198,109,.5); }
+  #endScreen .ending-sub{ font-size:17px; color:#e7ddff; margin-bottom:22px; }
+  .result-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px 24px; margin:14px auto; max-width:380px; }
+  .result-grid div{ background:rgba(255,255,255,.06); border-radius:10px; padding:10px; font-size:15px; }
+  .result-grid b{ color:var(--gold-bright); display:block; font-size:22px; }
+</style>
+</head>
+<body>
+
+<canvas id="game-canvas"></canvas>
+
+<!-- ============ 시작 화면 ============ -->
+<div id="startScreen" class="screen">
+  <h1>우리의 천로역정</h1>
+  <p class="subtitle">예담과 민혜가 함께 천성을 향해 걸어가는<br/>2인 협동 순례 여정</p>
+  <div class="card">
+    <div id="fbWarn" class="err"></div>
+    <button id="btnCreate">방 만들기</button>
+    <button id="btnJoin" class="ghost">코드로 입장하기</button>
+    <p class="small" style="margin-top:14px">서로 다른 곳에서 같은 입장 코드로 접속하세요.<br/>실제 전화 통화를 하며 함께 플레이하는 것을 권장합니다.</p>
+    <hr style="border:none;border-top:1px solid rgba(242,198,109,.25);margin:18px 0" />
+    <button id="btnSolo" class="ghost">혼자 연습하기</button>
+    <div id="soloPick" class="hidden" style="margin-top:12px">
+      <p class="small">누구로 연습할까요?</p>
+      <button data-solo="yedam">예담으로</button>
+      <button data-solo="minhye">민혜로</button>
+    </div>
+    <p class="small" style="margin-top:8px;opacity:.8">혼자 연습하기는 상대 없이 모든 스테이지를 둘러볼 수 있어요.</p>
+  </div>
+</div>
+
+<!-- ============ 코드 입력 화면 ============ -->
+<div id="joinScreen" class="screen hidden">
+  <div class="card">
+    <h2>입장 코드 입력</h2>
+    <p class="small">상대가 공유한 6자리 코드를 입력하세요.</p>
+    <input id="joinCodeInput" maxlength="6" placeholder="------" autocomplete="off" inputmode="numeric" />
+    <div id="joinErr" class="err"></div>
+    <button id="btnJoinConfirm">입장하기</button>
+    <button id="btnJoinBack" class="ghost">뒤로</button>
+  </div>
+</div>
+
+<!-- ============ 캐릭터 선택 / 대기실 ============ -->
+<div id="lobbyScreen" class="screen hidden">
+  <div class="card">
+    <h2>입장 코드</h2>
+    <div id="lobbyCode" class="code-display" title="클릭하면 복사돼요">------</div>
+    <p class="small">이 코드를 상대에게 공유하세요.</p>
+
+    <h2 style="margin-top:18px">캐릭터 선택</h2>
+    <div class="char-row">
+      <div class="char-pick" data-char="yedam">
+        <div class="char-ava yedam-ava"></div>
+        <div><b>예담</b></div>
+        <div class="small">남자 캐릭터</div>
+      </div>
+      <div class="char-pick" data-char="minhye">
+        <div class="char-ava minhye-ava"></div>
+        <div><b>민혜</b></div>
+        <div class="small">여자 캐릭터</div>
+      </div>
+    </div>
+
+    <div id="lobbyStatus" class="small"></div>
+    <button id="btnReady" disabled>준비 완료</button>
+    <div id="readyWait" class="waiting"></div>
+    <button id="btnLeaveLobby" class="ghost">방 나가기</button>
+  </div>
+</div>
+
+<!-- ============ 게임 HUD ============ -->
+<div id="hud" class="hidden">
+  <div class="hud-box">
+    <div class="hud-name" id="hudYedamName">예담</div>
+    <div class="bar"><span id="hudYedamHp" style="width:100%"></span></div>
+  </div>
+  <div class="hud-box" style="text-align:right">
+    <div>점수 <b id="hudScore">0</b></div>
+    <div class="small">넘어짐 <span id="hudFalls">0</span> · 다시 일어남 <span id="hudRetry">0</span></div>
+  </div>
+  <div class="hud-box">
+    <div class="hud-name" id="hudMinhyeName">민혜</div>
+    <div class="bar"><span id="hudMinhyeHp" style="width:100%"></span></div>
+  </div>
+</div>
+<div id="stage-banner" class="hidden"></div>
+<div id="objective" class="hidden"></div>
+<div id="controls-hint" class="hidden">WASD/방향키 이동 · A/D 좌우 회전 · Space 공격/액션 · Enter 신호/상호작용</div>
+<div id="toast-wrap"></div>
+
+<!-- ============ 퀴즈/상호작용 오버레이 ============ -->
+<div id="quizPanel" class="overlay-panel hidden">
+  <div class="card q-card">
+    <div id="quizCategory" class="small"></div>
+    <div id="quizText" class="q-text"></div>
+    <div id="quizOpts" class="q-opts"></div>
+    <div id="quizStatus" class="q-status"></div>
+  </div>
+</div>
+
+<!-- ============ 실패 화면 ============ -->
+<div id="failScreen" class="screen hidden">
+  <div class="card">
+    <h2 style="color:#ffb0b0">잠시 넘어졌지만, 여정은 끝나지 않았습니다.</h2>
+    <p id="failReason" class="small" style="margin:10px 0"></p>
+    <div id="stageDesc" class="small hidden" style="background:rgba(0,0,0,.25);border-radius:10px;padding:12px;margin:10px 0;line-height:1.6"></div>
+    <button id="btnRetry">다시 도전하기</button>
+    <button id="btnStageDesc" class="ghost">현재 스테이지 설명 보기</button>
+    <button id="btnLeaveFail" class="ghost">방 나가기</button>
+    <div id="retryWait" class="waiting"></div>
+  </div>
+</div>
+
+<!-- ============ 엔딩 화면 ============ -->
+<div id="endScreen" class="screen hidden">
+  <div class="card" style="max-width:560px">
+    <div class="ending-msg">우리는 아직 여정 중이지만,<br/>함께라면 끝까지 걸어갈 수 있습니다.</div>
+    <div class="ending-sub">예담아, 함께 걸어줘서 고마워.</div>
+    <div class="result-grid">
+      <div>함께 통과한 스테이지<b id="endStages">0</b></div>
+      <div>최종 점수<b id="endScore">0</b></div>
+      <div>넘어진 횟수<b id="endFalls">0</b></div>
+      <div>다시 일어난 횟수<b id="endRetry">0</b></div>
+    </div>
+    <p class="small" style="margin-top:8px">“실패는 끝이 아니라, 함께 다시 걷는 시작입니다.”</p>
+    <button id="btnEndRestart" style="margin-top:14px">처음부터 다시</button>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   ★ Firebase 설정값 — 여기에 본인 프로젝트 값을 입력하세요 ★
+   ※ Firebase 설정값을 입력해야 온라인 2인 접속 기능이 작동합니다.
+============================================================ */
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  databaseURL: "https://YOUR_PROJECT-default-rtdb.firebaseio.com",
+  projectId: "YOUR_PROJECT",
+  storageBucket: "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID"
+};
+/* ============================================================ */
+
+let db = null, fbOK = false;
+try {
+  if (firebaseConfig.apiKey && firebaseConfig.apiKey !== "YOUR_API_KEY") {
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.database();
+    fbOK = true;
+  }
+} catch (e) { console.error("Firebase init 실패", e); }
+let fbConfigured = fbOK;   // 설정이 실제로 채워졌는지 기억(솔로 모드로 fbOK를 꺼도 유지)
+
+/* ============================================================
+   전역 상태
+============================================================ */
+const G = {
+  roomCode:null, me:null, other:null, roomRef:null, isHost:false, solo:false,
+  stage:0, started:false, stageComplete:false,
+  totalScore:0, stageScore:0,
+  hp:{ yedam:100, minhye:100 },
+  falls:0, retryCount:0, stagesCleared:0,
+  remoteState:{}, myPos:{ x:0, z:6, ry:0 }, lastNetSend:0,
+};
+const CHAR_NAME = { yedam:"예담", minhye:"민혜" };
+const STAGE_NAMES = ["","멸망의 도시","좁은 문","절망의 늪","의심의 성","시험의 광야","천성"];
+const STAGE_DESCS = {
+  1:"중앙의 바벨탑을 두 사람이 Space로 함께 공격해 무너뜨리세요. 빛나는 특수 벽돌은 1초 안에 둘이 함께 공격해야 부서집니다.",
+  2:"길을 따라 나아가며 세상적 유혹(적)을 Space로 물리치고 좁은 문에 도달하세요. 가까이 붙어 함께 치면 더 강합니다.",
+  3:"흩어진 5개의 아이템을 모아 늪을 건너세요. 두 사람이 가까이 있으면 빠르게, 멀어지면 느려집니다.",
+  4:"서로 다른 입구에서 시작해 미로를 지나 중앙 광장에서 만나세요. Enter로 빛 신호를 보내고, 거짓 표지판을 조심하세요.",
+  5:"성경·상식·커플 퀴즈를 맞히며 광야를 통과하세요. 두 사람이 모두 정답을 골라야 앞으로 나아갑니다.",
+};
+
+/* ============================================================
+   DOM 헬퍼
+============================================================ */
+const $ = id => document.getElementById(id);
+function show(id){ $(id).classList.remove('hidden'); }
+function hide(id){ $(id).classList.add('hidden'); }
+function toast(msg){
+  const t = document.createElement('div');
+  t.className='toast'; t.textContent=msg;
+  $('toast-wrap').appendChild(t);
+  setTimeout(()=>{ t.style.opacity='0'; t.style.transition='opacity .5s'; },2200);
+  setTimeout(()=>t.remove(),2800);
+}
+if (!fbOK) {
+  $('fbWarn').textContent = "⚠ Firebase 설정값이 비어 있습니다. 코드 상단 firebaseConfig를 입력하면 온라인 2인 접속이 작동합니다. (지금은 솔로 연습 모드로 진행됩니다)";
+}
+
+/* ============================================================
+   three.js 기본 세팅
+============================================================ */
+let scene, camera, renderer, clock, stageGroup;
+const players = {};
+const keys = {};
+let camYaw = 0;
+let signalTickers = [];
+let fxTickers = [];   // 공격 이펙트(빛 탄환·불꽃)
+
+function initThree(){
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x2a1f52);
+  scene.fog = new THREE.Fog(0x2a1f52, 36, 110);
+
+  camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 600);
+  camera.position.set(0, 6, 14);
+
+  renderer = new THREE.WebGLRenderer({ canvas:$('game-canvas'), antialias:true });
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  renderer.shadowMap.enabled = true;
+
+  scene.add(new THREE.AmbientLight(0xb9a8ff, 0.78));
+  const sun = new THREE.DirectionalLight(0xffe9c4, 1.0);
+  sun.position.set(12,24,10); sun.castShadow = true;
+  sun.shadow.mapSize.set(1024,1024); scene.add(sun);
+  const rim = new THREE.PointLight(0xf2c66d, 0.6, 130);
+  rim.position.set(-12,16,-12); scene.add(rim);
+
+  stageGroup = new THREE.Group(); scene.add(stageGroup);
+  clock = new THREE.Clock();
+  addEventListener('resize', ()=>{
+    camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+  });
+  animate();
+}
+
+/* ---------- 캐릭터 ---------- */
+function makeCharacter(which){
+  const g = new THREE.Group();
+  const isY = which === 'yedam';
+  const bodyColor = isY ? 0x3f6fc4 : 0xc45f9b;
+  const headColor = isY ? 0xffe0bd : 0xffe3cf;
+
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.42,0.5,1.5,14),
+    new THREE.MeshStandardMaterial({ color:bodyColor, roughness:.7 }));
+  body.position.y=0.95; body.castShadow=true; g.add(body);
+  const shoulder = new THREE.Mesh(new THREE.SphereGeometry(0.42,12,10),
+    new THREE.MeshStandardMaterial({ color:bodyColor, roughness:.7 }));
+  shoulder.position.y=1.6; shoulder.castShadow=true; g.add(shoulder);
+
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.38,16,16),
+    new THREE.MeshStandardMaterial({ color:headColor, roughness:.6 }));
+  head.position.y=1.85; head.castShadow=true; g.add(head);
+
+  const cloak = new THREE.Mesh(new THREE.ConeGeometry(0.62,1.1,12,1,true),
+    new THREE.MeshStandardMaterial({ color:isY?0x2c4f93:0x9b3f72, roughness:.8, side:THREE.DoubleSide }));
+  cloak.position.y=1.0; g.add(cloak);
+
+  const halo = new THREE.Mesh(new THREE.TorusGeometry(0.3,0.04,8,20),
+    new THREE.MeshStandardMaterial({ color:0xf2c66d, emissive:0xf2c66d, emissiveIntensity:.6 }));
+  halo.rotation.x=Math.PI/2; halo.position.y=2.35; g.add(halo);
+
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.1,8,8),
+    new THREE.MeshStandardMaterial({ color:0xffffff }));
+  nose.position.set(0,0,0.36); head.add(nose); // 캐릭터 정면 표시
+
+  g.userData.halo = halo;
+  return g;
+}
+function spawnPlayers(){
+  ['yedam','minhye'].forEach(w=>{
+    if(!players[w]){ players[w]=makeCharacter(w); scene.add(players[w]); }
+  });
+}
+
+/* ============================================================
+   입력
+============================================================ */
+addEventListener('keydown', e=>{
+  if (e.target && e.target.tagName === 'INPUT') return;
+  keys[e.code]=true;
+  if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) e.preventDefault();
+  if (e.code==='Space') onAction();
+  if (e.code==='Enter') onInteract();
+});
+addEventListener('keyup', e=>{ keys[e.code]=false; });
+
+const MOVE_SPEED = 6.2, TURN_SPEED = 2.4;
+
+function updateLocalMovement(dt){
+  if (!G.started || G.stage===0 || G.stage===6) return;
+  const p = G.myPos;
+  const speedMul = stageSpeedMultiplier();
+
+  // 좌우 회전 — A/← 왼쪽, D/→ 오른쪽 (반드시 일치)
+  if (keys['KeyA']||keys['ArrowLeft'])  p.ry += TURN_SPEED*dt;   // 왼쪽으로 회전
+  if (keys['KeyD']||keys['ArrowRight']) p.ry -= TURN_SPEED*dt;   // 오른쪽으로 회전
+
+  // 전/후진 — 바라보는 방향 기준
+  const fx = Math.sin(p.ry), fz = Math.cos(p.ry);
+  let mv = 0;
+  if (keys['KeyW']||keys['ArrowUp'])   mv += 1;
+  if (keys['KeyS']||keys['ArrowDown']) mv -= 1;
+  if (mv!==0){
+    p.x += fx*mv*MOVE_SPEED*speedMul*dt;
+    p.z += fz*mv*MOVE_SPEED*speedMul*dt;
+  }
+  p.x = Math.max(-80, Math.min(80, p.x));
+  p.z = Math.max(-130, Math.min(80, p.z));
+  if (stageMods[G.stage] && stageMods[G.stage].constrain) stageMods[G.stage].constrain(p);
+}
+
+function stageSpeedMultiplier(){
+  if (G.stage===3){
+    const o = G.remoteState;
+    if (o && typeof o.x==='number'){
+      const d = Math.hypot(o.x-G.myPos.x, o.z-G.myPos.z);
+      return d<7 ? 1.25 : (d>16 ? 0.4 : 0.8);
+    }
+    return fbOK ? 0.8 : 1.1;
+  }
+  return 1;
+}
+
+/* ============================================================
+   카메라 — third-person follow
+============================================================ */
+function updateCamera(dt){
+  if (!players[G.me] || G.stage===0 || G.stage===6) return;
+  const p = G.myPos;
+  let diff = p.ry - camYaw;
+  while (diff>Math.PI) diff -= Math.PI*2;
+  while (diff<-Math.PI) diff += Math.PI*2;
+  camYaw += diff * Math.min(1, dt*6);
+
+  const fx = Math.sin(camYaw), fz = Math.cos(camYaw);
+  const dist = 8, height = 4.2;
+  const cx = p.x - fx*dist;        // 캐릭터 뒤쪽
+  const cz = p.z - fz*dist;
+  const k = Math.min(1, dt*5);
+  camera.position.x += (cx - camera.position.x)*k;
+  camera.position.y += (height - camera.position.y)*k;
+  camera.position.z += (cz - camera.position.z)*k;
+  camera.lookAt(p.x + fx*4, 1.4, p.z + fz*4);  // 캐릭터 앞쪽을 바라봄
+}
+
+/* ============================================================
+   메인 루프
+============================================================ */
+function animate(){
+  requestAnimationFrame(animate);
+  const dt = Math.min(0.05, clock.getDelta());
+  updateLocalMovement(dt);
+
+  if (players[G.me]){
+    const me = players[G.me];
+    me.position.set(G.myPos.x, 0, G.myPos.z);
+    me.rotation.y = G.myPos.ry;
+    if (me.userData.lunge > 0){            // 공격 들썩임(스쿼시)
+      me.userData.lunge -= dt;
+      const s = 1 + Math.max(0, me.userData.lunge)*1.1;
+      me.scale.set(s, 2 - s, s);
+    } else me.scale.set(1,1,1);
+  }
+  if (players[G.other] && G.remoteState && typeof G.remoteState.x==='number'){
+    const m = players[G.other], r = G.remoteState;
+    m.position.x += (r.x - m.position.x)*Math.min(1,dt*8);
+    m.position.z += (r.z - m.position.z)*Math.min(1,dt*8);
+    let rd = (r.ry||0) - m.rotation.y;
+    while (rd>Math.PI) rd -= Math.PI*2; while (rd<-Math.PI) rd += Math.PI*2;
+    m.rotation.y += rd*Math.min(1,dt*8);
+  }
+  ['yedam','minhye'].forEach(w=>{ if(players[w]) players[w].userData.halo.rotation.z += dt; });
+
+  if (G.started && stageMods[G.stage] && stageMods[G.stage].update) stageMods[G.stage].update(dt);
+
+  // 신호 빛 수명 처리
+  signalTickers = signalTickers.filter(b=>{
+    if (b.userData.tick){ b.userData.tick(dt); return b.parent!==null; }
+    return false;
+  });
+  // 공격 이펙트 수명 처리
+  fxTickers = fxTickers.filter(m=>{
+    m.userData.fxLife -= dt;
+    const k = Math.max(0, m.userData.fxLife / m.userData.fxMax); // 1 → 0
+    if (m.userData.fxFn) m.userData.fxFn(m, k, dt);
+    if (m.userData.fxLife <= 0){
+      stageGroup.remove(m);
+      if (m.userData.fxLight) stageGroup.remove(m.userData.fxLight);
+      return false;
+    }
+    return true;
+  });
+
+  updateCamera(dt);
+  sendNetwork();
+  renderer.render(scene, camera);
+}
+
+/* ============================================================
+   네트워크 동기화
+============================================================ */
+function sendNetwork(){
+  if (!fbOK || !G.roomRef || !G.me) return;
+  const now = performance.now();
+  if (now - G.lastNetSend < 100) return;     // 위치/회전 100ms 마다
+  G.lastNetSend = now;
+  G.roomRef.child('players/'+G.me).update({
+    x:+G.myPos.x.toFixed(2), z:+G.myPos.z.toFixed(2), ry:+G.myPos.ry.toFixed(3),
+    hp:G.hp[G.me], online:true
+  });
+}
+function listenRoom(){
+  if (!fbOK || !G.roomRef) return;
+
+  G.roomRef.child('players/'+G.other).on('value', snap=>{
+    const v = snap.val(); if(!v) return;
+    G.remoteState = v;
+    if (typeof v.hp==='number') G.hp[G.other]=v.hp;
+    if (v.online===false && G.started && G.stage>=1 && G.stage<=5){
+      failStage("상대방의 연결이 끊겼습니다.");
+    }
+    updateHUD();
+  });
+  G.roomRef.child('state').on('value', snap=>{
+    const s = snap.val(); if(!s) return;
+    if (typeof s.totalScore==='number') G.totalScore = s.totalScore;
+    if (s.signal) handleSignal(s.signal);
+    if (s.ending){ showEnding(s.ending); }
+    if (typeof s.stage==='number' && s.stage!==G.stage){ enterStage(s.stage); }
+    updateHUD();
+  });
+  G.roomRef.child('retryState').on('value', snap=>{
+    const r = snap.val(); if(!r) return; handleRetryState(r);
+  });
+  G.roomRef.child('players').on('value', snap=>{ updateLobby(snap.val()||{}); });
+}
+
+/* ============================================================
+   방 생성 / 입장
+============================================================ */
+function genCode(){ return String(Math.floor(100000 + Math.random()*900000)); }
+
+$('btnCreate').onclick = ()=>{
+  G.roomCode = genCode(); G.isHost = true;
+  if (fbOK){
+    G.roomRef = db.ref('rooms/'+G.roomCode);
+    G.roomRef.child('meta').set({ created: firebase.database.ServerValue.TIMESTAMP });
+    G.roomRef.child('state').update({ stage:0, totalScore:0 });
+    listenRoom();
+  }
+  openLobby();
+};
+/* ---------- 혼자 연습하기 (오프라인 솔로) ---------- */
+$('btnSolo').onclick = ()=>{ $('soloPick').classList.toggle('hidden'); };
+document.querySelectorAll('[data-solo]').forEach(b=>{ b.onclick = ()=> startSolo(b.dataset.solo); });
+function startSolo(char){
+  fbOK = false; G.solo = true;          // 이 세션은 네트워크 없이 진행
+  G.me = char; G.other = (char==='yedam'?'minhye':'yedam');
+  G.roomCode = null; G.isHost = true; G.roomRef = null;
+  G.totalScore = 0; G.stageScore = 0; G.falls = 0; G.retryCount = 0; G.stagesCleared = 0;
+  G.hp = { yedam:100, minhye:100 };
+  enterStage(1);
+  if (players[G.other]) players[G.other].visible = false;   // 솔로에서는 상대 캐릭터 숨김
+}
+
+$('btnJoin').onclick = ()=>{ hide('startScreen'); show('joinScreen'); $('joinCodeInput').focus(); };
+$('btnJoinBack').onclick = ()=>{ show('startScreen'); hide('joinScreen'); };
+$('joinCodeInput').addEventListener('input', e=>{ e.target.value = e.target.value.replace(/\D/g,'').slice(0,6); });
+$('btnJoinConfirm').onclick = ()=>{
+  const code = $('joinCodeInput').value.trim();
+  if (code.length!==6){ $('joinErr').textContent="6자리 코드를 입력하세요."; return; }
+  if (!fbOK){ G.roomCode=code; G.isHost=false; openLobby(); return; }
+  db.ref('rooms/'+code+'/meta').get().then(s=>{
+    if (!s.exists()){ $('joinErr').textContent="존재하지 않는 방입니다."; return; }
+    G.roomCode=code; G.isHost=false; G.roomRef=db.ref('rooms/'+code);
+    listenRoom(); openLobby();
+  }).catch(()=>{ $('joinErr').textContent="입장 실패. 네트워크/DB 규칙을 확인하세요."; });
+};
+function openLobby(){
+  hide('startScreen'); hide('joinScreen'); show('lobbyScreen');
+  $('lobbyCode').textContent = G.roomCode;
+}
+$('lobbyCode').onclick = ()=>{
+  if (navigator.clipboard) navigator.clipboard.writeText(G.roomCode).then(()=>toast("코드 복사됨!"));
+};
+
+/* ---------- 캐릭터 선택 ---------- */
+let pickedChar = null;
+document.querySelectorAll('.char-pick').forEach(el=>{
+  el.onclick = ()=>{
+    if (el.classList.contains('taken')) return;
+    const c = el.dataset.char;
+    pickedChar = c;
+    document.querySelectorAll('.char-pick').forEach(x=>x.classList.remove('selected'));
+    el.classList.add('selected');
+    G.me = c; G.other = (c==='yedam'?'minhye':'yedam');
+    if (fbOK){
+      G.roomRef.child('players/'+c).update({ joined:true, ready:false, char:c, online:true });
+      G.roomRef.child('players/'+c).onDisconnect().update({ online:false });
+    }
+    $('btnReady').disabled = false;
+  };
+});
+function updateLobby(pl){
+  document.querySelectorAll('.char-pick').forEach(el=>{
+    const c = el.dataset.char;
+    const taken = pl[c] && pl[c].joined && c!==G.me;
+    el.classList.toggle('taken', !!taken);
+  });
+  const meReady = G.me && pl[G.me] && pl[G.me].ready;
+  const otherJoined = G.other && pl[G.other] && pl[G.other].joined;
+  const otherReady = G.other && pl[G.other] && pl[G.other].ready;
+  $('lobbyStatus').textContent = !G.me ? "캐릭터를 선택하세요."
+    : !otherJoined ? "상대방의 입장을 기다리는 중..."
+    : CHAR_NAME[G.other] + " 입장 완료" + (otherReady?" · 준비 완료":" · 준비 중");
+  if (meReady && otherReady){
+    if (G.isHost && fbOK) G.roomRef.child('state').update({ stage:1, totalScore:0 });
+    if (!fbOK) enterStage(1);
+  }
+  if (meReady) $('readyWait').textContent = otherReady ? "" : "상대방을 기다리는 중...";
+}
+$('btnReady').onclick = ()=>{
+  if (!pickedChar) return;
+  if (fbOK) G.roomRef.child('players/'+G.me).update({ ready:true });
+  $('btnReady').disabled = true;
+  $('readyWait').textContent = "상대방을 기다리는 중...";
+  if (!fbOK) setTimeout(()=>enterStage(1), 400);
+};
+$('btnLeaveLobby').onclick = leaveRoom;
+$('btnLeaveFail').onclick = leaveRoom;
+function leaveRoom(){ returnToStart(); }
+
+/* ============================================================
+   스테이지 진입 / 관리
+============================================================ */
+function clearStage(){
+  while (stageGroup.children.length){ stageGroup.remove(stageGroup.children.pop()); }
+  signalTickers = [];
+  fxTickers = [];
+}
+function enterStage(n){
+  G.stage = n; G.started = true; G.stageComplete = false; failGuard = false;
+  G.stageScore = 0;
+  clearStage(); spawnPlayers(); hideAllScreens();
+  if (n>=1 && n<=5){
+    show('hud'); show('stage-banner'); show('objective'); show('controls-hint');
+    $('stage-banner').textContent = "스테이지 "+n+" · "+STAGE_NAMES[n];
+    camYaw = 0;
+  }
+  if (stageMods[n] && stageMods[n].init) stageMods[n].init();
+  updateHUD();
+}
+function hideAllScreens(){
+  ['startScreen','joinScreen','lobbyScreen','failScreen','endScreen','quizPanel'].forEach(hide);
+}
+function updateHUD(){
+  $('hudYedamName').textContent = "예담" + (G.me==='yedam'?" (나)":"");
+  $('hudMinhyeName').textContent = "민혜" + (G.me==='minhye'?" (나)":"");
+  $('hudYedamHp').style.width = Math.max(0,G.hp.yedam)+"%";
+  $('hudMinhyeHp').style.width = Math.max(0,G.hp.minhye)+"%";
+  $('hudScore').textContent = G.totalScore + G.stageScore;
+  $('hudFalls').textContent = G.falls;
+  $('hudRetry').textContent = G.retryCount;
+}
+function setObjective(t){ $('objective').textContent = t; }
+function addScore(n){ G.stageScore += n; updateHUD(); }
+function damage(who, amount){
+  G.hp[who] = Math.max(0, G.hp[who]-amount);
+  updateHUD();
+  if (G.hp[who] <= 0) failStage("체력이 모두 소진되었습니다.");
+}
+function completeStage(){
+  if (!G.started || G.stageComplete) return;
+  G.stageComplete = true;
+  toast(STAGE_NAMES[G.stage]+" 통과!");
+  G.totalScore += G.stageScore + 100;
+  G.stageScore = 0;
+  G.stagesCleared = Math.max(G.stagesCleared, G.stage);
+  const next = G.stage + 1;
+  if (fbOK) G.roomRef.child('state').update({ stage:next, totalScore:G.totalScore });
+  else enterStage(next);
+}
+
+/* ============================================================
+   실패 / 재도전
+============================================================ */
+let failGuard = false;
+function failStage(reason){
+  if (failGuard || !G.started || G.stageComplete) return;
+  failGuard = true; G.started = false; G.falls++;
+  hide('hud'); hide('stage-banner'); hide('objective'); hide('quizPanel');
+  $('failReason').textContent = reason || "";
+  $('stageDesc').classList.add('hidden');
+  $('retryWait').textContent = "";
+  show('failScreen');
+  if (fbOK){
+    const upd = { failedStage:G.stage };
+    upd[G.me+'ReadyRetry'] = false;
+    G.roomRef.child('retryState').update(upd);
+  }
+  updateHUD();
+}
+$('btnStageDesc').onclick = ()=>{
+  $('stageDesc').textContent = STAGE_DESCS[G.stage] || "";
+  $('stageDesc').classList.toggle('hidden');
+};
+$('btnRetry').onclick = ()=>{
+  $('retryWait').textContent = "상대방을 기다리는 중...";
+  if (fbOK){
+    const upd = { failedStage:G.stage };
+    upd[G.me+'ReadyRetry'] = true;
+    G.roomRef.child('retryState').update(upd);
+  } else doRetry();
+};
+function handleRetryState(r){
+  if (r.failedStage==null || r.failedStage!==G.stage || G.started) return;
+  if (r.yedamReadyRetry && r.minhyeReadyRetry){
+    if (G.isHost){
+      G.roomRef.child('retryState').update({
+        yedamReadyRetry:false, minhyeReadyRetry:false,
+        retryCount:(r.retryCount||0)+1, failedStage:null
+      });
+    }
+    G.retryCount = (r.retryCount||0)+1;
+    doRetry();
+  } else {
+    const meReady = (G.me==='yedam'? r.yedamReadyRetry : r.minhyeReadyRetry);
+    if (meReady) $('retryWait').textContent = "상대방을 기다리는 중...";
+  }
+}
+function doRetry(){
+  failGuard = false;
+  G.stageScore = 0;
+  G.hp.yedam = 100; G.hp.minhye = 100;
+  hide('failScreen');
+  enterStage(G.stage);   // 현재 스테이지만 재시작 (이전 진행/점수는 유지)
+  toast("다시 도전! 함께 일어섭니다.");
+}
+
+/* ============================================================
+   신호 / 액션 / 상호작용
+============================================================ */
+let lastSignalT = 0;
+function onInteract(){
+  if (!G.started) return;
+  if (G.stage===4) sendSignal();
+  else if (stageMods[G.stage] && stageMods[G.stage].interact) stageMods[G.stage].interact();
+}
+function sendSignal(){
+  const sig = { who:G.me, x:+G.myPos.x.toFixed(1), z:+G.myPos.z.toFixed(1), t:Date.now() };
+  if (fbOK) G.roomRef.child('state/signal').set(sig);
+  else handleSignal(sig);
+}
+function handleSignal(sig){
+  if (!sig || sig.t===lastSignalT) return;
+  lastSignalT = sig.t;
+  toast(CHAR_NAME[sig.who] + "이(가) 신호를 보냈습니다.");
+  if (G.stage===4) spawnSignalLight(sig.x, sig.z);
+}
+function spawnSignalLight(x,z){
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.4,0.4,18,12,1,true),
+    new THREE.MeshBasicMaterial({ color:0xffd98a, transparent:true, opacity:.7, side:THREE.DoubleSide }));
+  beam.position.set(x,9,z); stageGroup.add(beam);
+  const light = new THREE.PointLight(0xffd98a,2,22); light.position.set(x,6,z); stageGroup.add(light);
+  let life = 3.2;
+  beam.userData.tick = (dt)=>{
+    life -= dt;
+    beam.material.opacity = Math.max(0, life/3.2*0.7);
+    light.intensity = Math.max(0, life);
+    if (life<=0){ stageGroup.remove(beam); stageGroup.remove(light); }
+  };
+  signalTickers.push(beam);
+}
+function onAction(){
+  if (!G.started) return;
+  if (stageMods[G.stage] && stageMods[G.stage].action) stageMods[G.stage].action();
+}
+
+/* ============================================================
+   공통 빌더
+============================================================ */
+const stageMods = {};
+function addGround(color,size){
+  const g = new THREE.Mesh(new THREE.PlaneGeometry(size||180,size||180),
+    new THREE.MeshStandardMaterial({ color:color||0x4a3a7a, roughness:.95 }));
+  g.rotation.x=-Math.PI/2; g.receiveShadow=true; stageGroup.add(g); return g;
+}
+function textSprite(text,color){
+  const cv = document.createElement('canvas'); cv.width=256; cv.height=64;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = color||'#3a2a6b'; ctx.fillRect(0,0,256,64);
+  ctx.fillStyle = '#fff'; ctx.font='bold 30px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(text,128,34);
+  const tex = new THREE.CanvasTexture(cv);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map:tex }));
+  sp.scale.set(3,0.75,1); return sp;
+}
+
+/* ---------- 공격 이펙트: 빛 탄환 + 불꽃 스파크 ---------- */
+function addFx(mesh, dur, fn, light){
+  mesh.userData.fxLife = dur; mesh.userData.fxMax = dur; mesh.userData.fxFn = fn;
+  if (light){ mesh.userData.fxLight = light; stageGroup.add(light); }
+  stageGroup.add(mesh); fxTickers.push(mesh);
+}
+function fxBolt(from, to, color){
+  color = color || 0xffd98a;
+  const start = new THREE.Vector3(from.x, from.y, from.z);
+  const end   = new THREE.Vector3(to.x, to.y, to.z);
+  const bolt = new THREE.Mesh(new THREE.SphereGeometry(0.3,10,10),
+    new THREE.MeshBasicMaterial({ color }));
+  bolt.position.copy(start);
+  const glow = new THREE.Mesh(new THREE.SphereGeometry(0.6,8,8),
+    new THREE.MeshBasicMaterial({ color, transparent:true, opacity:0.4 }));
+  bolt.add(glow);
+  const light = new THREE.PointLight(color, 3, 12); light.position.copy(start);
+  const dur = 0.16;
+  addFx(bolt, dur, (m,k)=>{
+    const t = 1-k;                       // 0 → 1 진행
+    m.position.lerpVectors(start, end, t);
+    if (m.userData.fxLight) m.userData.fxLight.position.copy(m.position);
+  }, light);
+  setTimeout(()=>{ if (G.started) fxImpact(to.x, to.y, to.z, color); }, dur*1000);
+}
+function fxImpact(x, y, z, color){
+  color = color || 0xff8a3a;
+  const holder = new THREE.Object3D(); holder.position.set(x,y,z);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.4,0.13,8,20),
+    new THREE.MeshBasicMaterial({ color, transparent:true, opacity:0.9 }));
+  ring.rotation.x = Math.PI/2; holder.add(ring);
+  const sparks = [];
+  for (let i=0;i<12;i++){
+    const s = new THREE.Mesh(new THREE.TetrahedronGeometry(0.18),
+      new THREE.MeshBasicMaterial({ color: i%2?0xffd98a:color, transparent:true }));
+    const ang = Math.random()*Math.PI*2, up = Math.random()*3+1.5, sp = Math.random()*4+3;
+    s.userData.vel = new THREE.Vector3(Math.cos(ang)*sp, up, Math.sin(ang)*sp);
+    holder.add(s); sparks.push(s);
+  }
+  const light = new THREE.PointLight(color, 5, 16); light.position.set(x,y,z);
+  addFx(holder, 0.5, (m,k,dt)=>{
+    const t = 1-k;
+    ring.scale.setScalar(1 + t*4.5); ring.material.opacity = k*0.9;
+    if (m.userData.fxLight) m.userData.fxLight.intensity = k*5;
+    sparks.forEach(s=>{
+      s.position.x += s.userData.vel.x*dt;
+      s.position.y += s.userData.vel.y*dt;
+      s.position.z += s.userData.vel.z*dt;
+      s.userData.vel.y -= 13*dt;          // 중력
+      s.rotation.x += dt*10; s.rotation.y += dt*8;
+      s.material.opacity = k;
+    });
+  }, light);
+}
+function attackLunge(){            // 공격 시 캐릭터가 살짝 앞으로 들썩
+  const me = players[G.me]; if (!me) return;
+  me.userData.lunge = 0.18;
+}
+
+/* ============================================================
+   STAGE 1 — 멸망의 도시 / 바벨탑
+============================================================ */
+stageMods[1] = (function(){
+  let tower, bricks, towerHP, specialBricks, otherHitTime=0;
+  let collapsing, collapseT, listened=false;
+  const WORDS = ['교만','욕심','비교','인정중독','분노','불안','게으름'];
+
+  function init(){
+    addGround(0x5a3a5a,140);
+    G.myPos = { x:(G.me==='yedam'?-3:3), z:14, ry:Math.PI };
+    for(let i=0;i<14;i++){
+      const h = 2+Math.random()*5;
+      const b = new THREE.Mesh(new THREE.BoxGeometry(2+Math.random()*2,h,2+Math.random()*2),
+        new THREE.MeshStandardMaterial({ color:0x6b4a6b, roughness:.9 }));
+      const ang = Math.random()*Math.PI*2, r = 22+Math.random()*28;
+      b.position.set(Math.cos(ang)*r, h/2, Math.sin(ang)*r); b.castShadow=true; stageGroup.add(b);
+    }
+    tower = new THREE.Group(); bricks=[]; specialBricks=[];
+    for(let l=0;l<7;l++){
+      const word = WORDS[l%WORDS.length];
+      const isSpecial = (l===2 || l===5);
+      const rad = 3.2 - l*0.32;
+      const brick = new THREE.Mesh(new THREE.CylinderGeometry(rad,rad+0.2,1.4,16),
+        new THREE.MeshStandardMaterial({ color:isSpecial?0xf2c66d:0x9a5a4a, roughness:.7,
+          emissive:isSpecial?0xf2c66d:0x000000, emissiveIntensity:isSpecial?0.4:0 }));
+      brick.position.y = 1+l*1.45; brick.castShadow=true;
+      brick.userData = { special:isSpecial };
+      tower.add(brick);
+      const label = textSprite(word, isSpecial?'#a06a00':'#5a2a2a');
+      label.position.set(0,1+l*1.45,rad+0.1); label.scale.set(2.6,0.65,1); tower.add(label);
+      bricks.push(brick); if(isSpecial) specialBricks.push(brick);
+    }
+    stageGroup.add(tower);
+    towerHP = 100; collapsing=false; collapseT=0;
+    if(!listened){ listened=true; listenTowerHit(); }
+    setObjective("바벨탑을 Space로 공격! 빛나는 벽돌은 둘이 1초 안에 함께 공격해야 합니다.");
+  }
+  function listenTowerHit(){
+    if(!fbOK) return;
+    G.roomRef.child('state/towerHit').on('value', s=>{
+      const v=s.val(); if(!v) return;
+      if(v.who===G.other && G.stage===1 && G.started){
+        otherHitTime = v.t; towerHP -= 1.2; if(towerHP<=0) collapse();
+      }
+    });
+  }
+  let farWarnAt = 0;
+  function action(){
+    if (collapsing) return;
+    if (Math.hypot(G.myPos.x, G.myPos.z) > 13){          // 탑에 가까이 가야 공격 가능
+      const t = performance.now();
+      if (t - farWarnAt > 1500){ farWarnAt = t; toast("바벨탑에 더 가까이 가세요! (W로 전진)"); }
+      return;
+    }
+    const now = Date.now();
+    attackLunge();
+    fxBolt({ x:G.myPos.x, y:1.5, z:G.myPos.z }, { x:0, y:2+Math.random()*3.5, z:0 }, 0xffd98a);
+    towerHP -= 4; addScore(2);
+    if (fbOK) G.roomRef.child('state/towerHit').set({ who:G.me, t:now });
+    bricks.forEach(b=>{ b.material.emissiveIntensity=0.8; });
+    setTimeout(()=>bricks.forEach(b=>{ if(!b.userData.special) b.material.emissiveIntensity=0; }),80);
+    // 특수 벽돌: 둘이 1초 안에 함께 공격
+    if (Math.abs(now-otherHitTime)<1000 && specialBricks.length){
+      const sb = specialBricks.pop(); tower.remove(sb);
+      towerHP -= 14; addScore(20); toast("함께 공격! 특수 벽돌 파괴");
+    }
+    if (towerHP<=0) collapse();
+  }
+  function collapse(){ if(collapsing) return; collapsing=true; toast("바벨탑이 무너집니다!"); }
+  function update(dt){
+    if (collapsing){
+      collapseT += dt;
+      tower.children.forEach((c,i)=>{ c.position.y -= dt*(2+i*0.3); c.rotation.z += dt*(Math.random()-0.5); });
+      if (collapseT>2.2) completeStage();
+      setObjective("바벨탑 붕괴!");
+    } else {
+      tower.rotation.y += dt*0.05;
+      setObjective("바벨탑 체력: "+Math.max(0,Math.ceil(towerHP))+"% · 가까이 가서 Space로 공격");
+    }
+  }
+  return { init, action, update, interact:action };
+})();
+
+/* ============================================================
+   STAGE 2 — 좁은 문 / 유혹 처치
+============================================================ */
+stageMods[2] = (function(){
+  let enemies, timer;
+  const NAMES = ['돈의 유혹','SNS 중독','게으름','질투','분노','인정욕구'];
+  function init(){
+    addGround(0x3a4a6a,260);
+    G.myPos = { x:(G.me==='yedam'?-2:2), z:30, ry:Math.PI };
+    enemies=[]; timer=50;
+    const path = new THREE.Mesh(new THREE.BoxGeometry(8,0.2,90),
+      new THREE.MeshStandardMaterial({ color:0x6a5a9a }));
+    path.position.set(0,0.1,-10); stageGroup.add(path);
+    for(let i=0;i<10;i++){
+      const e = new THREE.Mesh(new THREE.IcosahedronGeometry(1,0),
+        new THREE.MeshStandardMaterial({ color:0x9a3a5a, roughness:.5, emissive:0x3a0a1a, emissiveIntensity:.4 }));
+      e.position.set((Math.random()-0.5)*5, 1.1, 20-i*5.5); e.castShadow=true;
+      e.userData = { name:NAMES[i%NAMES.length], hp:100 };
+      const lab = textSprite(e.userData.name,'#7a1a3a'); lab.position.set(0,2.1,0); e.add(lab);
+      stageGroup.add(e); enemies.push(e);
+    }
+    const gate = new THREE.Group();
+    const L = new THREE.Mesh(new THREE.BoxGeometry(1,8,1), new THREE.MeshStandardMaterial({ color:0xf2c66d }));
+    const R = L.clone(); L.position.x=-1.6; R.position.x=1.6;
+    const T = new THREE.Mesh(new THREE.BoxGeometry(4.2,1,1), new THREE.MeshStandardMaterial({ color:0xf2c66d })); T.position.y=4;
+    gate.add(L,R,T); gate.position.set(0,4,-32);
+    const glow = new THREE.Mesh(new THREE.PlaneGeometry(3,7), new THREE.MeshBasicMaterial({ color:0xffd98a, transparent:true, opacity:.4 }));
+    glow.position.z=0.1; gate.add(glow); stageGroup.add(gate);
+    setObjective("Space로 유혹을 물리치고 좁은 문(앞)까지! 가까이 붙으면 더 강합니다.");
+  }
+  function action(){
+    const p=G.myPos; let near=null, nd=4;
+    enemies.forEach(e=>{ if(e.userData.hp>0){ const d=Math.hypot(e.position.x-p.x,e.position.z-p.z); if(d<nd){ nd=d; near=e; } }});
+    if(!near) return;
+    let dmg = 18;
+    const o=G.remoteState;
+    if (o && typeof o.x==='number' && Math.hypot(o.x-p.x,o.z-p.z)<6) dmg=36;
+    attackLunge();
+    fxBolt({ x:p.x, y:1.4, z:p.z }, { x:near.position.x, y:1.2, z:near.position.z }, dmg>=36?0xff5a8a:0xffd98a);
+    near.userData.hp -= dmg; addScore(3);
+    near.scale.setScalar(Math.max(0.3, near.userData.hp/100));
+    near.material.emissiveIntensity=0.9;
+    setTimeout(()=>{ if(near) near.material.emissiveIntensity=0.4; },80);
+    if (near.userData.hp<=0){ stageGroup.remove(near); addScore(10); toast(near.userData.name+" 물리침!"); }
+  }
+  function update(dt){
+    timer -= dt;
+    const p=G.myPos;
+    enemies.forEach(e=>{
+      if (e.userData.hp<=0) return;
+      const dx=p.x-e.position.x, dz=p.z-e.position.z, d=Math.hypot(dx,dz);
+      if (d<10 && d>1.2){ e.position.x+=dx/d*dt; e.position.z+=dz/d*dt; }
+      e.rotation.y+=dt; e.rotation.x+=dt*0.5;
+      if (d<1.6) damage(G.me, 8*dt);
+    });
+    const alive = enemies.filter(e=>e.userData.hp>0).length;
+    if (G.myPos.z < -28){
+      const o=G.remoteState;
+      const otherThere = !fbOK || (o && o.z < -26);
+      if (otherThere) completeStage();
+      else setObjective("좁은 문 도착! 상대를 기다리는 중...");
+    } else setObjective("남은 유혹: "+alive+" · 좁은 문(앞)으로 전진 · 남은 시간 "+Math.ceil(timer)+"초");
+    if (timer<=0) failStage("제한 시간을 초과했습니다.");
+  }
+  return { init, action, update, interact:action };
+})();
+
+/* ============================================================
+   STAGE 3 — 절망의 늪 / 아이템 수집
+============================================================ */
+const SWAMP_QUIZ = { cat:'성경 퀴즈', q:'예수님께서 물 위를 걸으신 바다는?', opts:['갈릴리 바다','홍해','요단강','사해'], a:0 };
+stageMods[3] = (function(){
+  let items, collected, spamCount;
+  const ITEMS = [
+    { key:'boat', name:'믿음의 배', color:0x8a5a2a, how:'pad' },
+    { key:'vest', name:'소망의 구명조끼', color:0xff8a3a, how:'mash' },
+    { key:'fin',  name:'인내의 오리발', color:0x3a8a6a, how:'click' },
+    { key:'rope', name:'공동체의 밧줄', color:0xc9b08a, how:'pad' },
+    { key:'lamp', name:'말씀의 등불', color:0xffd98a, how:'quiz' },
+  ];
+  function init(){
+    addGround(0x2a3a3a,220);
+    const swamp = new THREE.Mesh(new THREE.PlaneGeometry(90,90),
+      new THREE.MeshStandardMaterial({ color:0x274a3a, roughness:1, metalness:.2, transparent:true, opacity:.85 }));
+    swamp.rotation.x=-Math.PI/2; swamp.position.y=0.05; stageGroup.add(swamp);
+    G.myPos = { x:(G.me==='yedam'?-4:4), z:26, ry:Math.PI };
+    collected={}; items=[]; spamCount=0;
+    ITEMS.forEach((it,i)=>{
+      const m = new THREE.Mesh(new THREE.OctahedronGeometry(1,0),
+        new THREE.MeshStandardMaterial({ color:it.color, emissive:it.color, emissiveIntensity:.5, roughness:.4 }));
+      const ang = i/ITEMS.length*Math.PI*2;
+      m.position.set(Math.cos(ang)*15, 1.5, Math.sin(ang)*15-2);
+      m.userData = it;
+      const lab = textSprite(it.name,'#1a3a2a'); lab.position.set(0,2,0); m.add(lab);
+      stageGroup.add(m); items.push(m);
+    });
+    const pad = new THREE.Mesh(new THREE.CircleGeometry(3,24),
+      new THREE.MeshStandardMaterial({ color:0xf2c66d, emissive:0xf2c66d, emissiveIntensity:.4 }));
+    pad.rotation.x=-Math.PI/2; pad.position.set(0,0.12,-26); stageGroup.add(pad);
+    setObjective("아이템 5개를 모으세요. 가까이 가서 Space! 둘이 붙어 다니면 빨라집니다.");
+  }
+  function action(){
+    const p=G.myPos;
+    for (const m of items){
+      if (collected[m.userData.key]) continue;
+      if (Math.hypot(m.position.x-p.x, m.position.z-p.z) < 3){
+        const it = m.userData;
+        if (it.how==='quiz') openQuiz(SWAMP_QUIZ, ()=>collect(m), ()=>toast("아쉬워요, 다시 시도!"));
+        else if (it.how==='mash'){ spamCount++; m.scale.setScalar(1+Math.sin(spamCount)*0.15);
+          if (spamCount>=8){ spamCount=0; collect(m); } else toast("연타! ("+spamCount+"/8)"); }
+        else collect(m);   // pad / click 은 근접+Space 로 단순화
+        break;
+      }
+    }
+  }
+  function collect(m){
+    if (collected[m.userData.key]) return;
+    collected[m.userData.key]=true; stageGroup.remove(m); addScore(15);
+    toast(m.userData.name+" 획득!");
+  }
+  function update(dt){
+    items.forEach(m=>{ if(!collected[m.userData.key]){ m.rotation.y+=dt; m.position.y=1.5+Math.sin(performance.now()/400+m.position.x)*0.2; }});
+    const got = Object.keys(collected).length;
+    if (got>=ITEMS.length){
+      if (Math.hypot(G.myPos.x, G.myPos.z+26) < 3){
+        const o=G.remoteState; const otherThere = !fbOK || (o && Math.hypot(o.x,o.z+26)<4);
+        if (otherThere) completeStage();
+        else setObjective("출구 도착! 상대를 기다리는 중...");
+      } else setObjective("모든 아이템 획득! 황금 발판(앞)으로 함께 이동하세요.");
+    } else {
+      const mul = stageSpeedMultiplier();
+      const spd = mul>1?"빠름":(mul<0.6?"느림(멀어짐)":"보통");
+      setObjective("아이템 "+got+"/5 · 이동속도: "+spd+" (가까이 붙으세요)");
+    }
+  }
+  return { init, action, update, interact:action };
+})();
+
+/* ============================================================
+   STAGE 4 — 의심의 성 / 미로
+============================================================ */
+stageMods[4] = (function(){
+  let walls, plaza, met, halfWall;
+  const CW=10, CH=10;          // 미로 셀 수 (클수록 길고 어려움)
+  const TILE=3.4;              // 통로 폭
+
+  // 입장 코드 기반 고정 시드 PRNG — 두 사람이 같은 미로를 봄
+  function strSeed(s){ let h=2166136261; for(let i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,16777619); } return h>>>0; }
+  function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+
+  function init(){
+    addGround(0x33294f, (Math.max(CW,CH)*2+4)*TILE);
+    met=false; walls=[]; halfWall=TILE/2;
+    const rnd = mulberry32(strSeed(G.roomCode || 'cheonro-solo'));
+
+    // 1) 재귀적 백트래커로 완전 미로 생성
+    const cells = Array.from({length:CH},()=>Array.from({length:CW},()=>({n:0,e:0,s:0,w:0,v:0})));
+    const stack=[[0,0]]; cells[0][0].v=1;
+    while(stack.length){
+      const [cx,cy]=stack[stack.length-1], nb=[];
+      if(cy>0   && !cells[cy-1][cx].v) nb.push('n');
+      if(cx<CW-1&& !cells[cy][cx+1].v) nb.push('e');
+      if(cy<CH-1&& !cells[cy+1][cx].v) nb.push('s');
+      if(cx>0   && !cells[cy][cx-1].v) nb.push('w');
+      if(!nb.length){ stack.pop(); continue; }
+      const d=nb[Math.floor(rnd()*nb.length)];
+      if(d==='n'){ cells[cy][cx].n=1; cells[cy-1][cx].s=1; cells[cy-1][cx].v=1; stack.push([cx,cy-1]); }
+      if(d==='e'){ cells[cy][cx].e=1; cells[cy][cx+1].w=1; cells[cy][cx+1].v=1; stack.push([cx+1,cy]); }
+      if(d==='s'){ cells[cy][cx].s=1; cells[cy+1][cx].n=1; cells[cy+1][cx].v=1; stack.push([cx,cy+1]); }
+      if(d==='w'){ cells[cy][cx].w=1; cells[cy][cx-1].e=1; cells[cy][cx-1].v=1; stack.push([cx-1,cy]); }
+    }
+
+    // 2) 타일 격자(벽/길)로 변환
+    const TW=2*CW+1, TH=2*CH+1;
+    const grid = Array.from({length:TH},()=>Array(TW).fill(1)); // 1=벽, 0=길
+    for(let cy=0;cy<CH;cy++) for(let cx=0;cx<CW;cx++){
+      const tx=2*cx+1, ty=2*cy+1; grid[ty][tx]=0;
+      if(cells[cy][cx].n) grid[ty-1][tx]=0;
+      if(cells[cy][cx].e) grid[ty][tx+1]=0;
+      if(cells[cy][cx].s) grid[ty+1][tx]=0;
+      if(cells[cy][cx].w) grid[ty][tx-1]=0;
+    }
+    // 중앙 광장 — 3x3 개방
+    const ccx=Math.floor(CW/2), ccy=Math.floor(CH/2), ptx=2*ccx+1, pty=2*ccy+1;
+    for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++) grid[pty+dy][ptx+dx]=0;
+
+    const wx = tx => (tx-(TW-1)/2)*TILE;
+    const wz = ty => (ty-(TH-1)/2)*TILE;
+
+    // 3) 벽 메쉬 생성
+    const wallMat = new THREE.MeshStandardMaterial({ color:0x4a3a6a, roughness:.8 });
+    for(let ty=0;ty<TH;ty++) for(let tx=0;tx<TW;tx++){
+      if(grid[ty][tx]!==1) continue;
+      const x=wx(tx), z=wz(ty);
+      const w=new THREE.Mesh(new THREE.BoxGeometry(TILE,6,TILE), wallMat);
+      w.position.set(x,3,z); w.castShadow=true; stageGroup.add(w);
+      walls.push({ x, z });
+    }
+
+    // 4) 중앙 광장
+    const px=wx(ptx), pz=wz(pty);
+    plaza = new THREE.Mesh(new THREE.CircleGeometry(2.4,24),
+      new THREE.MeshStandardMaterial({ color:0xf2c66d, emissive:0xf2c66d, emissiveIntensity:.5 }));
+    plaza.rotation.x=-Math.PI/2; plaza.position.set(px,0.12,pz); stageGroup.add(plaza);
+    plaza.userData = { cx:px, cz:pz };
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.5,30,12,1,true),
+      new THREE.MeshBasicMaterial({ color:0xffd98a, transparent:true, opacity:.25, side:THREE.DoubleSide }));
+    beam.position.set(px,15,pz); stageGroup.add(beam);   // 중앙 위치 힌트 빛기둥
+
+    // 5) 시작 위치 — 정반대 두 구석
+    const aPos={ x:wx(1), z:wz(1), ry:Math.PI*0.25 };
+    const bPos={ x:wx(2*CW-1), z:wz(2*CH-1), ry:Math.PI*1.25 };
+    G.myPos = (G.me==='minhye') ? {...bPos} : {...aPos};
+
+    // 6) 가짜/진짜 표지판 (길 위 임의 위치, 시드 고정)
+    const signTexts=['이 길이 정답입니다','출구','돌아가세요','거의 다 왔습니다','함정! 돌아가','중앙은 이쪽','막다른 길'];
+    const pathTiles=[];
+    for(let ty=1;ty<TH-1;ty++) for(let tx=1;tx<TW-1;tx++){
+      if(grid[ty][tx]===0 && !(Math.abs(tx-ptx)<2&&Math.abs(ty-pty)<2)) pathTiles.push([tx,ty]);
+    }
+    const nSign=Math.min(12, pathTiles.length);
+    for(let i=0;i<nSign;i++){
+      const idx=Math.floor(rnd()*pathTiles.length), [tx,ty]=pathTiles.splice(idx,1)[0];
+      const txt=signTexts[Math.floor(rnd()*signTexts.length)];
+      const lie = rnd()<0.55;
+      const s=textSprite(txt, lie?'#7a2a2a':'#2a5a3a');
+      s.position.set(wx(tx),2.3,wz(ty)); s.scale.set(3.0,0.78,1); stageGroup.add(s);
+    }
+
+    setObjective("정반대 구석에서 출발! 긴 미로를 지나 중앙 황금 광장(빛기둥)에서 만나세요. Enter로 빛 신호를 보내고, 거짓 표지판을 조심!");
+  }
+
+  function constrain(p){
+    const r=halfWall+0.42;
+    for(let i=0;i<walls.length;i++){
+      const w=walls[i], dx=p.x-w.x, dz=p.z-w.z;
+      if (Math.abs(dx)<r && Math.abs(dz)<r){
+        const pxd=r-Math.abs(dx), pzd=r-Math.abs(dz);
+        if (pxd<pzd) p.x += dx>0?pxd:-pxd; else p.z += dz>0?pzd:-pzd;
+      }
+    }
+  }
+  function update(dt){
+    if (!plaza) return;
+    const { cx, cz } = plaza.userData;
+    const dMe = Math.hypot(G.myPos.x-cx, G.myPos.z-cz);
+    const o = G.remoteState;
+    const dOther = (o && typeof o.x==='number') ? Math.hypot(o.x-cx, o.z-cz) : 99;
+    if (dMe<2.6 && (!fbOK || dOther<3.0) && !met){ met=true; toast("중앙 광장에서 만났습니다!"); completeStage(); }
+    else if (dMe<2.6) setObjective("광장 도착! 상대를 기다리는 중... (Enter로 신호를 보내세요)");
+  }
+  return { init, update, constrain };
+})();
+
+/* ============================================================
+   STAGE 5 — 시험의 광야 / 협동 퀴즈
+============================================================ */
+stageMods[5] = (function(){
+  let qIndex, gates, answering;
+  const QUIZ = [
+    { cat:'성경 퀴즈', q:'다윗이 물리친 블레셋 장수의 이름은?', opts:['골리앗','사울','삼손','아각'], a:0 },
+    { cat:'성경 퀴즈', q:'노아가 방주에서 내보내, 감람나무(올리브) 잎을 물고 돌아온 새는?', opts:['비둘기','까마귀','독수리','참새'], a:0 },
+    { cat:'상식 퀴즈', q:'1년 중 낮이 가장 긴 날을 무엇이라 하나요?', opts:['춘분','하지','추분','동지'], a:1 },
+    { cat:'상식 퀴즈', q:'무지개는 보통 몇 가지 색으로 표현하나요?', opts:['5','6','7','8'], a:2 },
+    { cat:'커플 퀴즈', q:'함께 끝까지 걸어가는 우리 여정의 목적지는?', opts:['멸망의 도시','천성','의심의 성','광야'], a:1 },
+  ];
+  function init(){
+    addGround(0x8a7a4a,280);
+    G.myPos = { x:(G.me==='yedam'?-2:2), z:30, ry:Math.PI };
+    qIndex=0; answering=false; gates=[];
+    for(let i=0;i<QUIZ.length;i++){
+      const arch = new THREE.Mesh(new THREE.TorusGeometry(3,0.4,8,20,Math.PI),
+        new THREE.MeshStandardMaterial({ color:0xf2c66d, emissive:0x6a4a00, emissiveIntensity:.3 }));
+      arch.position.set(0,0,18-i*12); arch.rotation.z=Math.PI; arch.scale.y=1.4;
+      stageGroup.add(arch); gates.push(arch);
+    }
+    for(let i=0;i<18;i++){
+      const d = new THREE.Mesh(new THREE.ConeGeometry(2+Math.random()*2,1.5,8),
+        new THREE.MeshStandardMaterial({ color:0x9a8a5a, roughness:1 }));
+      d.position.set((Math.random()-0.5)*60,0.7,(Math.random()-0.5)*80-10); stageGroup.add(d);
+    }
+    setObjective("앞의 황금 아치에 다가가면 퀴즈가 나옵니다. 둘 다 정답을 골라야 통과합니다.");
+  }
+  function update(dt){
+    if (answering) return;
+    const gate = gates[qIndex];
+    if (!gate){
+      const o=G.remoteState; const otherThere = !fbOK || (o && o.z<-44);
+      if (G.myPos.z<-44 && otherThere) completeStage();
+      else setObjective("광야의 끝! 함께 앞으로 나아가세요.");
+      return;
+    }
+    if (Math.abs(G.myPos.z-gate.position.z)<3 && G.myPos.z>gate.position.z-1){
+      answering=true;
+      openQuiz(QUIZ[qIndex],
+        ()=>{ qIndex++; answering=false; addScore(20); G.myPos.z -= 6; toast("정답! 함께 통과"); },
+        ()=>{ answering=false; damage(G.me,20); toast("오답... 체력이 줄었습니다"); });
+    } else setObjective("퀴즈 "+(qIndex+1)+"/"+QUIZ.length+" · 다음 아치로 전진");
+  }
+  return { init, update };
+})();
+
+/* ============================================================
+   퀴즈 시스템 (협동: 둘 다 정답이어야 통과)
+============================================================ */
+let quizState = { q:null, myAns:null, onPass:null, onFail:null };
+function openQuiz(q, onPass, onFail){
+  quizState = { q, myAns:null, onPass, onFail };
+  $('quizCategory').textContent = q.cat || '퀴즈';
+  $('quizText').textContent = q.q;
+  const wrap = $('quizOpts'); wrap.innerHTML='';
+  q.opts.forEach((opt,i)=>{
+    const b = document.createElement('button');
+    b.textContent = opt; b.onclick = ()=>answerQuiz(i); wrap.appendChild(b);
+  });
+  $('quizStatus').textContent = '';
+  show('quizPanel');
+}
+function answerQuiz(i){
+  if (quizState.myAns!=null) return;
+  quizState.myAns = i;
+  const correct = (i===quizState.q.a);
+  [...$('quizOpts').children].forEach((b,idx)=>{ b.disabled=true; if(idx===i) b.style.background = correct?'#a8e0a0':'#e0a0a0'; });
+  if (fbOK){
+    G.roomRef.child('state/quiz/'+G.me).set({ correct, t:Date.now() });
+    $('quizStatus').textContent = correct ? "정답 선택! 상대를 기다리는 중..." : "오답을 선택했습니다. 상대를 기다리는 중...";
+    G.roomRef.child('state/quiz/'+G.other).on('value', s=>{
+      const v=s.val(); if(!v || quizState.myAns==null) return;
+      G.roomRef.child('state/quiz/'+G.other).off();
+      finishQuiz((quizState.myAns===quizState.q.a) && v.correct);
+    });
+  } else finishQuiz(correct);
+}
+function finishQuiz(bothCorrect){
+  setTimeout(()=>{
+    hide('quizPanel');
+    if (fbOK && G.isHost) G.roomRef.child('state/quiz').remove();
+    if (bothCorrect){ if(quizState.onPass) quizState.onPass(); }
+    else { if(quizState.onFail) quizState.onFail(); }
+  }, 600);
+}
+
+/* ============================================================
+   STAGE 6 — 천성 엔딩
+============================================================ */
+stageMods[6] = (function(){
+  let gate, light, walking, walkT, handsJoined;
+  function init(){
+    clearStage();
+    addGround(0x6a5a9a,220);
+    G.myPos = { x:(G.me==='yedam'?-4:4), z:20, ry:Math.PI };
+    G.started = true;
+    hide('stage-banner'); show('hud'); show('objective');
+    walking=false; walkT=0; handsJoined=false;
+
+    const road = new THREE.Mesh(new THREE.PlaneGeometry(8,60),
+      new THREE.MeshStandardMaterial({ color:0xffd98a, emissive:0xf2c66d, emissiveIntensity:.5 }));
+    road.rotation.x=-Math.PI/2; road.position.set(0,0.05,-10); stageGroup.add(road);
+
+    gate = new THREE.Group();
+    const arch = new THREE.Mesh(new THREE.TorusGeometry(5,0.8,12,30,Math.PI),
+      new THREE.MeshStandardMaterial({ color:0xffd98a, emissive:0xf2c66d, emissiveIntensity:.8, metalness:.6, roughness:.2 }));
+    arch.position.set(0,5,-34); arch.rotation.z=Math.PI; arch.scale.y=1.5; gate.add(arch);
+    for(let i=0;i<2;i++){
+      const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.8,1,12,12),
+        new THREE.MeshStandardMaterial({ color:0xfff0c4, metalness:.5, roughness:.3 }));
+      pillar.position.set(i?5.5:-5.5,6,-34); gate.add(pillar);
+    }
+    stageGroup.add(gate);
+    light = new THREE.PointLight(0xffe9b0,2,90); light.position.set(0,12,-30); stageGroup.add(light);
+    // 카메라 초기 위치
+    camera.position.set(0,7,32);
+    setObjective("천성 앞에 도착했습니다. 서로 가까이 다가가면 손을 잡습니다.");
+  }
+  function update(dt){
+    light.intensity = 2 + Math.sin(performance.now()/300)*0.5;
+    if (!walking){
+      const o=G.remoteState;
+      const d = (o && typeof o.x==='number') ? Math.hypot(o.x-G.myPos.x, o.z-G.myPos.z) : (fbOK?99:1);
+      if (d<3.5 || !fbOK){
+        if (!handsJoined){ handsJoined=true; toast("서로 손을 잡았습니다."); setObjective("황금빛 문이 열립니다..."); }
+        walking=true;
+      } else setObjective("서로 가까이 다가가세요...");
+    } else {
+      walkT += dt;
+      ['yedam','minhye'].forEach((w,i)=>{
+        if (players[w]){
+          players[w].position.x += ((i?2:-2)-players[w].position.x)*Math.min(1,dt*1.2);
+          players[w].position.z += (-34-players[w].position.z)*Math.min(1,dt*0.35);
+          players[w].rotation.y = Math.PI;
+        }
+      });
+      const focusZ = players[G.me] ? players[G.me].position.z : 0;
+      camera.position.x += (0-camera.position.x)*dt*2;
+      camera.position.y += (8-camera.position.y)*dt*2;
+      camera.position.z += ((focusZ+12)-camera.position.z)*dt*2;
+      camera.lookAt(0,3,-34);
+      if (walkT>4) triggerEnding();
+    }
+  }
+  return { init, update };
+})();
+
+let endShown = false;
+function triggerEnding(){
+  if (endShown) return; endShown=true;
+  const ending = { stages:Math.max(G.stagesCleared,5), score:G.totalScore, falls:G.falls, retry:G.retryCount };
+  if (fbOK) G.roomRef.child('state/ending').set(ending);
+  showEnding(ending);
+}
+function showEnding(e){
+  hide('hud'); hide('objective'); hide('controls-hint');
+  $('endStages').textContent = e.stages;
+  $('endScore').textContent = e.score;
+  $('endFalls').textContent = e.falls;
+  $('endRetry').textContent = e.retry;
+  show('endScreen');
+}
+function returnToStart(){
+  // Firebase 리스너/방 정리
+  if (fbConfigured && G.roomRef){
+    try {
+      if (G.me) G.roomRef.child('players/'+G.me).update({ online:false, joined:false, ready:false });
+      G.roomRef.off();
+    } catch(e){}
+  }
+  fbOK = fbConfigured;   // 솔로로 꺼뒀던 온라인 기능 복구
+
+  // 게임 상태 초기화 (이전 기록까지 전부 리셋)
+  G.roomCode=null; G.me=null; G.other=null; G.roomRef=null; G.isHost=false; G.solo=false;
+  G.stage=0; G.started=false; G.stageComplete=false;
+  G.totalScore=0; G.stageScore=0; G.hp={ yedam:100, minhye:100 };
+  G.falls=0; G.retryCount=0; G.stagesCleared=0; G.remoteState={};
+  G.myPos={ x:0, z:6, ry:0 }; G.lastNetSend=0;
+  endShown=false; failGuard=false; pickedChar=null; lastSignalT=0; camYaw=0;
+
+  clearStage();
+  ['yedam','minhye'].forEach(w=>{ if(players[w]){ players[w].visible=true; players[w].scale.set(1,1,1); players[w].position.set(w==='yedam'?-2:2,0,0); players[w].rotation.y=0; }});
+
+  // UI 초기화
+  ['joinScreen','lobbyScreen','failScreen','endScreen','quizPanel','hud','stage-banner','objective','controls-hint'].forEach(hide);
+  document.querySelectorAll('.char-pick').forEach(el=>el.classList.remove('selected','taken'));
+  $('btnReady').disabled = true;
+  $('readyWait').textContent=''; $('lobbyStatus').textContent='';
+  $('lobbyCode').textContent='------'; $('joinErr').textContent=''; $('joinCodeInput').value='';
+  $('soloPick').classList.add('hidden');
+  show('startScreen');
+}
+$('btnEndRestart').onclick = returnToStart;
+
+/* ============================================================
+   부팅
+============================================================ */
+initThree();
+spawnPlayers();
+players.yedam.position.set(-2,0,0);
+players.minhye.position.set(2,0,0);
+</script>
+</body>
+</html>
